@@ -1,0 +1,348 @@
+---Dar solución a los siguientes incisos:
+---1. Crear un procedimiento que permita clonar un tablero, copiando todas sus listas, tarjetas (con sus
+---descripciones, fechas, y usuarios asignados), checklists, y comentarios. Debe recibir el código del
+---tablero original y el nombre del nuevo tablero. Verificar si el tablero existe mediante una excepción
+---personalizada, utilizar un parámetro de salida para enviar un mensaje con el resultado de la ejecución.
+
+SELECT *
+FROM TBL_TABLERO
+WHERE CODIGO_TABLERO = 1;
+
+CREATE SEQUENCE SQ_CODIGO_TABLERO START WITH 52;
+
+SELECT *
+FROM TBL_LISTAS
+WHERE CODIGO_TABLERO = 54;
+
+CREATE SEQUENCE SQ_CODIGO_LISTA START WITH 52;
+
+SELECT *
+FROM TBL_TARJETAS
+WHERE CODIGO_LISTA IN (56, 57);
+
+CREATE SEQUENCE SQ_CODIGO_TARJETA START WITH 72;
+
+SELECT *
+FROM TBL_COMENTARIOS
+WHERE CODIGO_TARJETA IN (73);
+
+CREATE SEQUENCE SQ_CODIGO_COMENTARIO START WITH 1;
+
+SELECT *
+FROM TBL_CHECKLISTS
+WHERE CODIGO_TARJETA = 73;
+
+CREATE SEQUENCE SQ_CODIGO_CHECKLIST START WITH 1;
+
+
+CREATE OR REPLACE PROCEDURE P_CLONAR_TABLERO (
+        PI_CODIGO_TABLERO TBL_TABLERO.CODIGO_TABLERO%TYPE,
+        PI_NOMBRE_NUEVO_TABLERO TBL_TABLERO.NOMBRE_TABLERO%TYPE,
+        PO_CODIGO_NUEVO_TABLERO OUT TBL_TABLERO.CODIGO_TABLERO%TYPE,
+        PO_CODIGO_RESUTADO OUT NUMBER,
+        PO_MENSAJE_RESULTADO OUT VARCHAR2   
+) IS
+    V_CODIGO_LISTA TBL_LISTAS.CODIGO_LISTA%TYPE;
+    V_CODIGO_TARJETA TBL_TARJETAS.CODIGO_TARJETA%TYPE;
+    E_TABLERO_NO_EXISTE EXCEPTION;
+    V_CANTIDAD_TABLEROS NUMBER;
+BEGIN
+    SELECT COUNT(*)
+    INTO V_CANTIDAD_TABLEROS
+    FROM TBL_TABLERO 
+    WHERE CODIGO_TABLERO = PI_CODIGO_TABLERO;
+
+    IF (V_CANTIDAD_TABLEROS = 0) THEN
+        RAISE E_TABLERO_NO_EXISTE;
+    END IF;
+
+    PO_CODIGO_NUEVO_TABLERO := SQ_CODIGO_TABLERO.NEXTVAL;
+
+    INSERT INTO TBL_TABLERO (
+        CODIGO_TABLERO,
+        CODIGO_USUARIO_CREA,
+        NOMBRE_TABLERO,
+        DESCRIPCION,
+        TIPO_ACCESO,
+        FECHA_CREACION,
+        CODIGO_ORGANIZACION 
+    )
+    SELECT PO_CODIGO_NUEVO_TABLERO AS CODIGO_TABLERO,
+        CODIGO_USUARIO_CREA,
+        PI_NOMBRE_NUEVO_TABLERO AS NOMBRE_TABLERO,
+        DESCRIPCION,
+        TIPO_ACCESO,
+        FECHA_CREACION,
+        CODIGO_ORGANIZACION 
+    FROM TBL_TABLERO
+    WHERE CODIGO_TABLERO = PI_CODIGO_TABLERO;
+
+    FOR V_LISTA IN (
+                SELECT * 
+                FROM TBL_LISTAS 
+                WHERE CODIGO_TABLERO = PI_CODIGO_TABLERO
+            )
+    LOOP
+        V_CODIGO_LISTA := SQ_CODIGO_LISTA.NEXTVAL;
+        INSERT INTO TBL_LISTAS (
+            CODIGO_LISTA,
+            CODIGO_TABLERO,
+            NOMBRE_LISTA,
+            DESCRIPCION
+        ) VALUES ( 
+            V_CODIGO_LISTA,
+            PO_CODIGO_NUEVO_TABLERO,
+            V_LISTA.NOMBRE_LISTA,
+            V_LISTA.DESCRIPCION
+        );
+
+        FOR V_TARJETA IN (
+            SELECT * FROM TBL_TARJETAS 
+            WHERE CODIGO_LISTA = V_LISTA.CODIGO_LISTA
+        ) 
+        LOOP
+            V_CODIGO_TARJETA := SQ_CODIGO_TARJETA.NEXTVAL;
+           INSERT INTO TBL_TARJETAS (
+                CODIGO_TARJETA,
+                TITULO_TARJETA,
+                DESCRIPCION,
+                FECHA_CREACION,
+                FECHA_LIMITE,
+                CODIGO_LISTA,
+                CODIGO_USUARIO
+            ) VALUES ( 
+                V_CODIGO_TARJETA,
+                V_TARJETA.TITULO_TARJETA,
+                V_TARJETA.DESCRIPCION,
+                V_TARJETA.FECHA_CREACION,
+                V_TARJETA.FECHA_LIMITE,
+                V_CODIGO_LISTA,
+                V_TARJETA.CODIGO_USUARIO
+            ); 
+
+            FOR V_COMENTARIO IN (
+                SELECT *
+                FROM TBL_COMENTARIOS
+                WHERE CODIGO_TARJETA = V_TARJETA.CODIGO_TARJETA
+            ) LOOP
+                INSERT INTO TBL_COMENTARIOS (
+                    CODIGO_COMENTARIO,
+                    CODIGO_TARJETA,
+                    COMENTARIO,
+                    FECHA_PUBLICACION,
+                    CODIGO_USUARIO
+                ) VALUES (
+                    SQ_CODIGO_COMENTARIO.NEXTVAL,
+                    V_CODIGO_TARJETA,
+                    V_COMENTARIO.COMENTARIO,
+                    V_COMENTARIO.FECHA_PUBLICACION,
+                    V_COMENTARIO.CODIGO_USUARIO
+                );
+            END LOOP;
+
+            FOR V_CHECKLIST IN (
+                SELECT *
+                FROM TBL_CHECKLISTS
+                WHERE CODIGO_TARJETA = V_TARJETA.CODIGO_TARJETA
+            ) LOOP
+                INSERT INTO TBL_CHECKLISTS (
+                    CODIGO_CHECKLIST,
+                    CODIGO_USUARIO,
+                    CODIGO_TARJETA,
+                    TITULO_CHECKLIST,
+                    DESCRIPCION
+                ) VALUES (
+                    SQ_CODIGO_CHECKLIST.NEXTVAL,
+                    V_CHECKLIST.CODIGO_USUARIO,
+                    V_CODIGO_TARJETA,
+                    V_CHECKLIST.TITULO_CHECKLIST,
+                    V_CHECKLIST.DESCRIPCION
+                );
+            END LOOP;
+        END LOOP;
+    END LOOP;
+
+    PO_CODIGO_RESUTADO := 0;
+    PO_MENSAJE_RESULTADO := 'El tablero fue clonado exitosamente.';
+
+EXCEPTION
+    WHEN E_TABLERO_NO_EXISTE THEN
+        PO_CODIGO_RESUTADO := -1;
+        PO_MENSAJE_RESULTADO := 'El tablero no existe.';
+END;
+
+DECLARE
+    V_CODIGO_NUEVO_TABLERO NUMBER;
+    V_CODIGO_RESULTADO NUMBER;
+    V_MENSAJE_RESULTADO VARCHAR2(500);
+BEGIN
+    P_CLONAR_TABLERO(
+        PI_CODIGO_TABLERO => 1,
+        PI_NOMBRE_NUEVO_TABLERO => 'TABLERO COPIA',
+        PO_CODIGO_NUEVO_TABLERO => V_CODIGO_NUEVO_TABLERO,
+        PO_CODIGO_RESUTADO => V_CODIGO_RESULTADO,
+        PO_MENSAJE_RESULTADO => V_MENSAJE_RESULTADO
+    );
+END;
+
+
+---2. Desarrollar un procedimiento que reciba como parámetro el código de una lista y una nueva fecha
+---límite, basado en dicha fecha deberá actualizar todas las tarjetas asociadas a esa lista para asignarles
+---la nueva fecha. Imprimir en la terminal la información básica de cada una de las tarjetas actualizadas y
+---al final imprimir la cantidad de tarjetas que fueron actualizadas con dicha fecha.
+
+CREATE OR REPLACE PROCEDURE P_ACTUALIZAR_FECHA_LIMITE (
+        PI_CODIGO_LISTA TBL_LISTAS.CODIGO_LISTA%TYPE,
+        PI_FECHA_LIMITE DATE 
+) AS
+    V_CANTIDAD_TARJETAS NUMBER := 0;
+BEGIN
+    UPDATE TBL_TARJETAS
+    SET FECHA_LIMITE = PI_FECHA_LIMITE
+    WHERE CODIGO_LISTA = PI_CODIGO_LISTA;
+
+    COMMIT;
+
+    FOR V_TARJETA IN (
+        SELECT *
+        FROM TBL_TARJETAS
+        WHERE CODIGO_LISTA = PI_CODIGO_LISTA
+    ) LOOP
+        DBMS_OUTPUT.PUT_LINE(V_TARJETA.TITULO_TARJETA || ', ' || V_TARJETA.DESCRIPCION || ', ' || V_TARJETA.FECHA_CREACION || ', ' || V_TARJETA.FECHA_LIMITE);
+
+        V_CANTIDAD_TARJETAS := V_CANTIDAD_TARJETAS + 1;
+    END LOOP;
+    DBMS_OUTPUT.PUT_LINE('REGISTROS ACTUALIZADOS: ' || V_CANTIDAD_TARJETAS);
+END;
+
+
+BEGIN
+    P_ACTUALIZAR_FECHA_LIMITE(3, TO_DATE('25/12/2026', 'DD/MM/YYYY'));
+END;
+
+
+SELECT *
+FROM TBL_LISTAS;
+
+SELECT *
+FROM TBL_TARJETAS;
+
+
+
+---3. Crear un procedimiento que elimine un tablero y todas sus referencias, es decir que elimine todas las
+---listas, tarjetas, comentarios y otros registros asociados a los tableros (no utilizar un delete cascade).
+---Se debe recibir de parámetro el código del tablero y verificar si este existe, utilizar un parámetro de
+---salida para enviar un mensaje con el resultado de la ejecución.
+
+CREATE OR REPLACE PROCEDURE P_ELIMINAR_TABLERO(PI_CODIGO_TABLERO TBL_TABLERO.CODIGO_TABLERO%TYPE ) AS
+BEGIN
+
+    FOR V_LISTA IN (SELECT * FROM TBL_LISTAS WHERE CODIGO_TABLERO = PI_CODIGO_TABLERO) LOOP
+        FOR V_TARJETA IN (SELECT * FROM TBL_TARJETAS WHERE CODIGO_LISTA = V_LISTA.CODIGO_LISTA) LOOP
+            DELETE FROM TBL_ARCHIVOS_ADJUNTOS
+            WHERE CODIGO_TARJETA = V_TARJETA.CODIGO_TARJETA;
+
+            DELETE FROM TBL_USUARIOS_X_TARJETA 
+            WHERE CODIGO_TARJETA = V_TARJETA.CODIGO_TARJETA;
+
+            DELETE FROM TBL_COMENTARIOS
+            WHERE CODIGO_TARJETA = V_TARJETA.CODIGO_TARJETA;
+
+            FOR V_CHECKLIST IN (SELECT * FROM TBL_CHECKLISTS WHERE CODIGO_TARJETA = V_TARJETA.CODIGO_TARJETA) 
+            LOOP
+                DELETE FROM TBL_CHECKLIST_ITEMS
+                WHERE CODIGO_CHECKLIST = V_CHECKLIST.CODIGO_CHECKLIST;
+            END LOOP;
+
+            DELETE FROM TBL_CHECKLISTS
+            WHERE CODIGO_TARJETA = V_TARJETA.CODIGO_TARJETA;
+
+            DELETE FROM TBL_SUSCRIPCIONES
+            WHERE CODIGO_TARJETA = V_TARJETA.CODIGO_TARJETA; 
+
+            DELETE FROM TBL_TARJETAS
+            WHERE CODIGO_TARJETA = V_TARJETA.CODIGO_TARJETA;
+        END LOOP;
+        DELETE FROM TBL_SUSCRIPCIONES
+        WHERE CODIGO_LISTA = V_LISTA.CODIGO_LISTA;
+
+        DELETE FROM TBL_LISTAS
+        WHERE CODIGO_LISTA = V_LISTA.CODIGO_LISTA;
+    END LOOP;        
+    
+    DELETE FROM TBL_SUSCRIPCIONES
+    WHERE CODIGO_TABLERO = PI_CODIGO_TABLERO;
+
+    DELETE FROM TBL_TABLERO
+    WHERE CODIGO_TABLERO = PI_CODIGO_TABLERO;
+
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+
+END;
+
+ROLLBACK;
+
+SELECT * FROM TBL_TARJETAS
+WHERE CODIGO_LISTA = 3;
+
+SELECT *
+FROM TBL_LISTAS 
+WHERE CODIGO_TABLERO =3;
+
+BEGIN
+    P_ELIMINAR_TABLERO(3);
+END;
+
+SELECT *
+FROM TBL_tABLERO;
+
+---4. Desarrollar una función que devuelva el nombre del plan con más suscriptores activos, considerando
+---las fechas de inicio y fin del plan para filtrar solo las suscripciones vigentes.
+
+
+SELECT *
+FROM TBL_PLANES;
+
+SELECT * 
+FROM (
+    SELECT B.CODIGO_PLAN, B.NOMBRE_PLAN, COUNT(*) CANTIDAD_USUARIOS
+    FROM TBL_USUARIOS A 
+    INNER JOIN TBL_PLANES B 
+    ON (A.CODIGO_PLAN = B.CODIGO_PLAN)
+    GROUP BY B.CODIGO_PLAN, B.NOMBRE_PLAN
+    ORDER BY 3 DESC
+) WHERE ROWNUM = 1;
+
+
+
+CREATE OR REPLACE FUNCTION F_OBTENER_PLAN_POPULAR RETURN VARCHAR2 AS
+    V_CODIGO_PLAN NUMBER;
+    V_NOMBRE_PLAN VARCHAR2(500);
+    V_CANTIDAD_USUARIOS NUMBER;
+BEGIN 
+    SELECT B.CODIGO_PLAN, B.NOMBRE_PLAN, COUNT(*) CANTIDAD_USUARIOS
+    INTO V_CODIGO_PLAN, V_NOMBRE_PLAN, V_CANTIDAD_USUARIOS
+    FROM TBL_USUARIOS A 
+    INNER JOIN TBL_PLANES B 
+    ON (A.CODIGO_PLAN = B.CODIGO_PLAN)
+    GROUP BY B.CODIGO_PLAN, B.NOMBRE_PLAN
+    ORDER BY 3 DESC
+    FETCH FIRST 1 ROWS ONLY;
+
+    RETURN V_NOMBRE_PLAN;
+END;
+
+
+SELECT F_OBTENER_PLAN_POPULAR() AS PLAN_POPULAR
+FROM DUAL;
+
+
+DECLARE 
+    V_RESULTADO VARCHAR2(500);
+BEGIN
+    V_RESULTADO := F_OBTENER_PLAN_POPULAR();
+    DBMS_OUTPUT.PUT_LINE(V_RESULTADO);
+END;
